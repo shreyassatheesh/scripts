@@ -1,131 +1,160 @@
 #!/usr/bin/env bash
 
-set -Eeuo pipefail
+###############################################################################
+# mozhi.works Docker Installer
+#
+# This script is provided by mozhi.works. We wrapped common Docker install
+# commands into a single installer script for convenience. We are NOT
+# responsible for any damage, data loss, or system issues that may occur.
+# Use at your own risk.
+###############################################################################
 
-log() { echo "[INFO] $1"; }
-check() { echo "[CHECK] $1"; }
-testlog() { echo "[TEST] $1"; }
-error() { echo "[ERROR] $1" >&2; }
+set -e
 
-trap 'error "Installation failed on line $LINENO"; exit 1' ERR
+LOG_PREFIX="[INFO]"
 
-wait_for_apt() {
-  check "Waiting for apt locks to be released"
-  while sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1 || 
-        sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || 
-        sudo fuser /var/lib/dpkg/lock >/dev/null 2>&1; do
-    log "Another apt process is running. Waiting..."
-    sleep 3
-  done
+log() {
+  echo "${LOG_PREFIX} $1"
 }
 
-check "Verifying sudo access"
-sudo -v
-
-check "Detecting operating system"
-. /etc/os-release
-DISTRO="$ID"
-log "Detected $PRETTY_NAME"
-
-check "Checking internet connectivity"
-curl -fsSL https://download.docker.com >/dev/null
-
-install_debian_family() {
-  log "Using apt package manager"
-
-  wait_for_apt
-  sudo apt-get update -y
-
-  wait_for_apt
-  sudo apt-get install -y ca-certificates curl gnupg
-
-  sudo install -m 0755 -d /etc/apt/keyrings
-
-  curl -fsSL https://download.docker.com/linux/$DISTRO/gpg | 
-    sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-
-  sudo chmod a+r /etc/apt/keyrings/docker.gpg
-
-  ARCH=$(dpkg --print-architecture)
-
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null <<EOF
-deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$DISTRO $VERSION_CODENAME stable
-EOF
-
-  wait_for_apt
-  sudo apt-get update -y
-
-  wait_for_apt
-  sudo apt-get install -y 
-    docker-ce 
-    docker-ce-cli 
-    containerd.io 
-    docker-buildx-plugin 
-    docker-compose-plugin
+error() {
+  echo "[ERROR] $1" >&2
+  exit 1
 }
 
-install_rhel_family() {
+# Check for root privileges
+log "Checking for root privileges"
+if [ "$EUID" -ne 0 ]; then
+  error "This script must be run as root. Try: sudo $0"
+fi
+
+# Detect Linux distribution
+log "Detecting Linux distribution"
+if [ ! -f /etc/os-release ]; then
+  error "/etc/os-release not found. Cannot detect distribution."
+fi
+
+source /etc/os-release
+DISTRO_ID=$ID
+DISTRO_LIKE=$ID_LIKE
+
+log "Detected distro ID: $DISTRO_ID"
+log "Detected distro family: $DISTRO_LIKE"
+
+install_docker_debian() {
+  ###########################################################################
+  # Supported: Debian, Ubuntu, Linux Mint, Pop!_OS and other Debian-based
+  ###########################################################################
+  log "Installing Docker on a Debian-based distribution"
+
+  log "Updating package index"
+  apt-get update -y
+
+  log "Installing prerequisite packages"
+  apt-get install -y ca-certificates curl gnupg lsb-release
+
+  log "Adding Docker GPG key"
+  install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/$DISTRO_ID/gpg \
+    | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  chmod a+r /etc/apt/keyrings/docker.gpg
+
+  log "Adding Docker repository"
+  echo \
+    "deb [arch=$(dpkg --print-architecture) \
+    signed-by=/etc/apt/keyrings/docker.gpg] \
+    https://download.docker.com/linux/$DISTRO_ID \
+    $(lsb_release -cs) stable" \
+    > /etc/apt/sources.list.d/docker.list
+
+  log "Updating package index after adding Docker repo"
+  apt-get update -y
+
+  log "Installing Docker Engine"
+  apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+}
+
+install_docker_rhel() {
+  ###########################################################################
+  # Supported: RHEL, CentOS, Rocky Linux, AlmaLinux, Fedora and RHEL-based
+  ###########################################################################
+  log "Installing Docker on an RHEL-based distribution"
+
+  log "Installing dnf/yum utilities"
   if command -v dnf >/dev/null 2>&1; then
-    PKG="dnf"
+    dnf -y install dnf-plugins-core
+    log "Adding Docker repository"
+    dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+    log "Installing Docker Engine"
+    dnf -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   else
-    PKG="yum"
+    yum -y install yum-utils
+    log "Adding Docker repository"
+    yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+    log "Installing Docker Engine"
+    yum -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   fi
-
-  log "Using $PKG package manager"
-
-  sudo $PKG -y install dnf-plugins-core || true
-
-  sudo $PKG config-manager 
-    --add-repo https://download.docker.com/linux/$DISTRO/docker-ce.repo
-
-  sudo $PKG -y install 
-    docker-ce 
-    docker-ce-cli 
-    containerd.io 
-    docker-buildx-plugin 
-    docker-compose-plugin
 }
 
-case "$DISTRO" in
+install_docker_arch() {
+  ###########################################################################
+  # Supported: Arch Linux and Arch-based distributions
+  ###########################################################################
+  log "Installing Docker on an Arch-based distribution"
+
+  log "Synchronizing package database"
+  pacman -Sy --noconfirm
+
+  log "Installing Docker package"
+  pacman -S --noconfirm docker
+}
+
+install_docker_opensuse() {
+  ###########################################################################
+  # Supported: openSUSE Leap and Tumbleweed
+  ###########################################################################
+  log "Installing Docker on openSUSE"
+
+  log "Refreshing repositories"
+  zypper refresh
+
+  log "Installing Docker package"
+  zypper install -y docker
+}
+
+# Select installer based on distro
+case "$DISTRO_ID" in
   ubuntu|debian)
-    install_debian_family
+    install_docker_debian
     ;;
   fedora|centos|rhel|rocky|almalinux)
-    install_rhel_family
+    install_docker_rhel
+    ;;
+  arch)
+    install_docker_arch
+    ;;
+  opensuse*|sles)
+    install_docker_opensuse
     ;;
   *)
-    error "Unsupported distribution: $DISTRO"
-    exit 1
+    if [[ "$DISTRO_LIKE" == *"debian"* ]]; then
+      install_docker_debian
+    elif [[ "$DISTRO_LIKE" == *"rhel"* || "$DISTRO_LIKE" == *"fedora"* ]]; then
+      install_docker_rhel
+    else
+      error "Unsupported or unknown distribution: $DISTRO_ID"
+    fi
     ;;
 esac
 
-log "Enabling and starting Docker"
-sudo systemctl enable docker
-sudo systemctl start docker
+# Enable and start Docker service
+log "Enabling Docker service to start on boot"
+systemctl enable docker
 
-log "Adding user '$USER' to docker group"
-sudo usermod -aG docker "$USER"
+log "Starting Docker service"
+systemctl start docker
 
-testlog "Checking Docker version"
-sudo docker --version
+log "Verifying Docker installation"
+docker --version || error "Docker installation verification failed"
 
-testlog "Running hello-world test"
-sudo docker run --rm hello-world
-
-log "Cleaning package cache"
-if command -v apt-get >/dev/null 2>&1; then
-  wait_for_apt
-  sudo apt-get clean
-else
-  sudo dnf clean all 2>/dev/null || sudo yum clean all
-fi
-
-log "Installation completed successfully"
-log "Log out and back in to use Docker without sudo"
-
-if [[ -f "$0" ]]; then
-  log "Removing installer script"
-  rm -- "$0"
-else
-  log "Installer was run via pipe. No file to remove"
-fi
+log "Docker installation completed successfully"
