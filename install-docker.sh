@@ -77,10 +77,8 @@ install_debian_family() {
 
   ARCH=$(dpkg --print-architecture)
 
-  echo 
-    "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] 
-    https://download.docker.com/linux/$DISTRO $VERSION_CODENAME stable" | 
-    sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+  REPO="deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$DISTRO $VERSION_CODENAME stable"
+  echo "$REPO" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
   wait_for_apt
   sudo apt-get update -y
