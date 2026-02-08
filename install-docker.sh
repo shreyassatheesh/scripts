@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 
 ###############################################################################
-# mozhi.works Docker Installer
+# Docker Installation Script
 #
-# This script is provided by mozhi.works. We wrapped common Docker install
-# commands into a single installer script for convenience. We are NOT
-# responsible for any damage, data loss, or system issues that may occur.
-# Use at your own risk.
+# Supported distros:
+# Debian, Ubuntu and Debian-based
+# RHEL, CentOS, Rocky, AlmaLinux, Fedora and RHEL-based
+# Arch Linux and Arch-based
+# openSUSE Leap and Tumbleweed
+#
+# This script was created by Mozhi Works [mozhi.works].
 ###############################################################################
 
 set -e
@@ -22,13 +25,17 @@ error() {
   exit 1
 }
 
-# Check for root privileges
+log ""
+log "This Docker installation script was created by Mozhi Works [mozhi.works]. We wrapped common Docker installation commands into a single script for convenience. We are not responsible for any damage, data loss, or system issues that may occur. Use at your own risk."
+log "Press ^C now to cancel if you do not want to continue. Waiting 5 seconds..."
+log ""
+sleep 5
+
 log "Checking for root privileges"
 if [ "$EUID" -ne 0 ]; then
   error "This script must be run as root. Try: sudo $0"
 fi
 
-# Detect Linux distribution
 log "Detecting Linux distribution"
 if [ ! -f /etc/os-release ]; then
   error "/etc/os-release not found. Cannot detect distribution."
@@ -42,9 +49,6 @@ log "Detected distro ID: $DISTRO_ID"
 log "Detected distro family: $DISTRO_LIKE"
 
 install_docker_debian() {
-  ###########################################################################
-  # Supported: Debian, Ubuntu, Linux Mint, Pop!_OS and other Debian-based
-  ###########################################################################
   log "Installing Docker on a Debian-based distribution"
 
   log "Updating package index"
@@ -56,7 +60,7 @@ install_docker_debian() {
   log "Adding Docker GPG key"
   install -m 0755 -d /etc/apt/keyrings
   curl -fsSL https://download.docker.com/linux/$DISTRO_ID/gpg \
-    | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    | gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg
   chmod a+r /etc/apt/keyrings/docker.gpg
 
   log "Adding Docker repository"
@@ -75,31 +79,30 @@ install_docker_debian() {
 }
 
 install_docker_rhel() {
-  ###########################################################################
-  # Supported: RHEL, CentOS, Rocky Linux, AlmaLinux, Fedora and RHEL-based
-  ###########################################################################
   log "Installing Docker on an RHEL-based distribution"
 
-  log "Installing dnf/yum utilities"
   if command -v dnf >/dev/null 2>&1; then
+    log "Installing dnf utilities"
     dnf -y install dnf-plugins-core
+
     log "Adding Docker repository"
     dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+
     log "Installing Docker Engine"
     dnf -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   else
+    log "Installing yum utilities"
     yum -y install yum-utils
+
     log "Adding Docker repository"
     yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+
     log "Installing Docker Engine"
     yum -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   fi
 }
 
 install_docker_arch() {
-  ###########################################################################
-  # Supported: Arch Linux and Arch-based distributions
-  ###########################################################################
   log "Installing Docker on an Arch-based distribution"
 
   log "Synchronizing package database"
@@ -110,9 +113,6 @@ install_docker_arch() {
 }
 
 install_docker_opensuse() {
-  ###########################################################################
-  # Supported: openSUSE Leap and Tumbleweed
-  ###########################################################################
   log "Installing Docker on openSUSE"
 
   log "Refreshing repositories"
@@ -122,7 +122,6 @@ install_docker_opensuse() {
   zypper install -y docker
 }
 
-# Select installer based on distro
 case "$DISTRO_ID" in
   ubuntu|debian)
     install_docker_debian
@@ -147,7 +146,6 @@ case "$DISTRO_ID" in
     ;;
 esac
 
-# Enable and start Docker service
 log "Enabling Docker service to start on boot"
 systemctl enable docker
 
