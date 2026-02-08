@@ -1,28 +1,5 @@
 #!/usr/bin/env bash
 
-# ============================================================
-# Universal Docker Installer Script
-#
-# Supported operating systems:
-#   - Ubuntu (18.04+)
-#   - Debian (10+)
-#   - Fedora
-#   - CentOS Stream
-#   - RHEL
-#   - Rocky Linux
-#   - AlmaLinux
-#
-# Features:
-#   - Automatic distro detection
-#   - Waits for package manager locks
-#   - Installs latest Docker from official repo
-#   - Enables and starts Docker
-#   - Runs hello-world test
-#   - Adds user to docker group
-#   - Cleans package cache
-#   - Optionally deletes itself
-# ============================================================
-
 set -Eeuo pipefail
 
 log() { echo "[INFO] $1"; }
@@ -46,14 +23,8 @@ check "Verifying sudo access"
 sudo -v
 
 check "Detecting operating system"
-if [[ ! -f /etc/os-release ]]; then
-  error "Cannot detect OS"
-  exit 1
-fi
-
 . /etc/os-release
 DISTRO="$ID"
-
 log "Detected $PRETTY_NAME"
 
 check "Checking internet connectivity"
@@ -77,8 +48,9 @@ install_debian_family() {
 
   ARCH=$(dpkg --print-architecture)
 
-  REPO="deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$DISTRO $VERSION_CODENAME stable"
-  echo "$REPO" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null <<EOF
+deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$DISTRO $VERSION_CODENAME stable
+EOF
 
   wait_for_apt
   sudo apt-get update -y
@@ -151,7 +123,6 @@ fi
 log "Installation completed successfully"
 log "Log out and back in to use Docker without sudo"
 
-# Remove installer only if it exists as a real file
 if [[ -f "$0" ]]; then
   log "Removing installer script"
   rm -- "$0"
